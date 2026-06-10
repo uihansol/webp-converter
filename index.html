@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WEBP 일괄 변환기 — JPG / PNG</title>
+
+  <!-- 스타일시트 -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- 외부 라이브러리 (CDN) -->
+  <!-- JSZip : ZIP 파일 생성 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- FileSaver : 브라우저에서 파일 저장 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+
+  <div class="app">
+
+    <!-- ============ 헤더 ============ -->
+    <header class="app-header">
+      <div class="logo-mark" aria-hidden="true">WEBP→</div>
+      <div>
+        <h1>WEBP 일괄 변환기</h1>
+        <p class="subtitle">아이폰 WEBP 사진을 JPG 또는 PNG로 변환합니다. 모든 처리는 이 PC에서만 이루어지며, 파일은 어디에도 업로드되지 않습니다.</p>
+      </div>
+    </header>
+
+    <!-- ============ 1. 파일 선택 영역 ============ -->
+    <section class="card" aria-labelledby="step1-title">
+      <h2 id="step1-title"><span class="step-badge">1</span> 파일 선택</h2>
+
+      <!-- 드래그 앤 드롭 영역 -->
+      <div id="dropZone" class="drop-zone" tabindex="0"
+           role="button" aria-label="WEBP 파일을 여기에 드래그하거나 클릭해서 선택">
+        <div class="drop-zone-inner">
+          <div class="drop-icon" aria-hidden="true">⤓</div>
+          <p class="drop-main">WEBP 파일을 여기에 끌어다 놓으세요</p>
+          <p class="drop-sub">또는 아래 버튼으로 선택할 수 있어요</p>
+          <div class="drop-buttons">
+            <button type="button" id="btnPickFiles" class="btn btn-secondary">파일 선택</button>
+            <button type="button" id="btnPickFolder" class="btn btn-secondary">폴더 선택</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 실제 파일 입력 (화면에는 숨김) -->
+      <input type="file" id="fileInput" accept=".webp,image/webp" multiple hidden />
+      <input type="file" id="folderInput" webkitdirectory hidden />
+
+      <!-- 선택된 파일 목록 -->
+      <div id="fileListSection" class="file-list-section" hidden>
+        <div class="file-list-header">
+          <span id="fileCount" class="file-count">총 0개 파일</span>
+          <span id="totalSize" class="total-size"></span>
+        </div>
+        <ul id="fileList" class="file-list"></ul>
+      </div>
+    </section>
+
+    <!-- ============ 2. 변환 옵션 ============ -->
+    <section class="card" aria-labelledby="step2-title">
+      <h2 id="step2-title"><span class="step-badge">2</span> 변환 옵션</h2>
+
+      <div class="options-grid">
+
+        <!-- 출력 형식 -->
+        <fieldset class="option-group">
+          <legend>출력 형식</legend>
+          <label class="radio-label">
+            <input type="radio" name="format" value="jpg" checked />
+            <span>JPG <small>(용량 작음 · 사진에 적합)</small></span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="format" value="png" />
+            <span>PNG <small>(무손실 · 투명 배경 유지)</small></span>
+          </label>
+        </fieldset>
+
+        <!-- 최대 파일 용량 -->
+        <fieldset class="option-group">
+          <legend>최대 파일 용량</legend>
+          <select id="sizeLimit" class="select">
+            <option value="0" selected>원본 유지 (제한 없음)</option>
+            <option value="512000">500KB 이하</option>
+            <option value="1048576">1MB 이하</option>
+            <option value="2097152">2MB 이하</option>
+            <option value="5242880">5MB 이하</option>
+            <option value="custom">직접 입력…</option>
+          </select>
+          <div id="customSizeRow" class="custom-size-row" hidden>
+            <input type="number" id="customSizeValue" min="1" value="800" class="input-number" />
+            <select id="customSizeUnit" class="select select-unit">
+              <option value="1024" selected>KB</option>
+              <option value="1048576">MB</option>
+            </select>
+          </div>
+          <p id="pngLimitNote" class="note" hidden>
+            PNG는 무손실 형식이라 용량 조절에 한계가 있어요. 제한을 넘는 파일은 변환 후 안내해 드립니다.
+          </p>
+        </fieldset>
+
+      </div>
+    </section>
+
+    <!-- ============ 3. 변환 실행 ============ -->
+    <section class="card" aria-labelledby="step3-title">
+      <h2 id="step3-title"><span class="step-badge">3</span> 변환</h2>
+
+      <div class="action-row">
+        <button type="button" id="btnConvert" class="btn btn-primary" disabled>변환 시작</button>
+        <button type="button" id="btnReset" class="btn btn-ghost">초기화</button>
+      </div>
+
+      <!-- 진행 상황 -->
+      <div id="progressSection" class="progress-section" hidden>
+        <div class="progress-info">
+          <span id="progressLabel">처리 중: -</span>
+          <span id="progressCount">0 / 0</span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressTrack">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+      </div>
+
+      <!-- 결과 요약 -->
+      <div id="resultSection" class="result-section" hidden>
+        <p id="resultSummary" class="result-summary"></p>
+        <ul id="errorList" class="error-list" hidden></ul>
+        <ul id="warnList" class="warn-list" hidden></ul>
+        <button type="button" id="btnDownload" class="btn btn-primary btn-download" hidden>
+          전체 다운로드 (ZIP)
+        </button>
+      </div>
+    </section>
+
+    <footer class="app-footer">
+      원본 파일은 절대 수정되지 않습니다 · 변환본은 ZIP(<code>Converted_JPG_날짜.zip</code>) 안의
+      <code>Converted_JPG/</code> 또는 <code>Converted_PNG/</code> 폴더에 담겨 저장됩니다.
+    </footer>
+
+  </div>
+
+  <!-- 앱 스크립트 -->
+  <script src="script.js"></script>
+</body>
+</html>
