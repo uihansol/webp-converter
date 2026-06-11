@@ -13,7 +13,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <!-- FileSaver : 브라우저에서 파일 저장 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-  <!-- heic2any : HEIC/HEIF 디코딩 (브라우저는 HEIC를 직접 못 읽으므로 필요) -->
+  <!-- libheif-js : HEIC/HEIF 디코딩 (최신 libheif 내장, 최신 아이폰 HEIC 지원) -->
+  <script src="https://cdn.jsdelivr.net/npm/libheif-js@1.19.8/libheif-wasm/libheif-bundle.js"></script>
+  <!-- heic2any : libheif 실패 시 보조 디코더 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
 </head>
 <body>

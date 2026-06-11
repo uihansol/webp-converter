@@ -306,33 +306,97 @@ document
    ------------------------------------------------------------ */
 
 /**
+ * HEIC 디코딩 ① — libheif-js 사용 (최신 libheif 1.19 내장)
+ * 최신 아이폰(iOS 17/18 포함)의 HEIC도 지원
+ * @returns {HTMLCanvasElement}
+ */
+async function decodeHeicWithLibheif(file) {
+  if (typeof libheif === "undefined") {
+    throw new Error("libheif 라이브러리를 불러오지 못함");
+  }
+
+  const buf = await file.arrayBuffer();
+  const decoder = new libheif.HeifDecoder();
+  const images = decoder.decode(buf); // HEIC 내부의 모든 이미지 배열
+
+  if (!images || images.length === 0) {
+    throw new Error("HEIC 안에서 이미지를 찾지 못함");
+  }
+
+  // 다중 이미지 HEIC(버스트 등)는 첫 번째 이미지만 사용
+  const image = images[0];
+  const width = image.get_width();
+  const height = image.get_height();
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  // libheif가 RGBA 픽셀을 ImageData에 직접 채워 넣음
+  const imageData = ctx.createImageData(width, height);
+  await new Promise((resolve, reject) => {
+    image.display(imageData, (ok) =>
+      ok ? resolve() : reject(new Error("HEIC 픽셀 변환 실패"))
+    );
+  });
+
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+/**
+ * HEIC 디코딩 ② — heic2any 사용 (libheif 실패 시 보조 수단)
+ * @returns {HTMLCanvasElement}
+ */
+async function decodeHeicWithHeic2any(file) {
+  if (typeof heic2any === "undefined") {
+    throw new Error("heic2any 라이브러리를 불러오지 못함");
+  }
+
+  // 결과는 Blob 또는 Blob 배열(다중 이미지 HEIC)
+  const converted = await heic2any({ blob: file, toType: "image/png" });
+  const source = Array.isArray(converted) ? converted[0] : converted;
+
+  const bitmap = await createImageBitmap(source);
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext("2d").drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return canvas;
+}
+
+/**
  * 이미지 파일을 디코딩해 캔버스에 그림 (형식 자동 분기)
  * - WEBP : 브라우저 내장 디코더(createImageBitmap) 사용
- * - HEIC : 브라우저가 직접 못 읽으므로 heic2any로 먼저 PNG Blob으로 변환
+ * - HEIC : libheif-js 우선, 실패하면 heic2any로 한 번 더 시도
  * @param {File} file
  * @param {"webp"|"heic"} format
  * @returns {HTMLCanvasElement}
  * @throws 디코딩 실패(손상 파일 등) 시 예외 발생
  */
 async function decodeToCanvas(file, format) {
-  let source = file;
-
   if (format === "heic") {
-    // heic2any는 결과를 Blob 또는 Blob 배열(다중 이미지 HEIC)로 반환
-    const converted = await heic2any({ blob: file, toType: "image/png" });
-    source = Array.isArray(converted) ? converted[0] : converted;
+    try {
+      return await decodeHeicWithLibheif(file);
+    } catch (primaryErr) {
+      // libheif 실패 → heic2any로 재시도, 둘 다 실패하면 원인 함께 보고
+      try {
+        return await decodeHeicWithHeic2any(file);
+      } catch {
+        throw new Error(`HEIC 디코딩 실패 (${primaryErr.message})`);
+      }
+    }
   }
 
-  const bitmap = await createImageBitmap(source);
-
+  // WEBP — 브라우저 내장 디코더 (크롬/엣지 모두 지원)
+  const bitmap = await createImageBitmap(file);
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;
-
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(bitmap, 0, 0);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0);
   bitmap.close(); // 메모리 해제
-
   return canvas;
 }
 
@@ -473,7 +537,7 @@ btnConvert.addEventListener("click", async () => {
         );
       }
 
-      // (3) 디코딩 (HEIC는 heic2any로 먼저 변환)
+      // (3) 디코딩 (HEIC는 libheif-js로 디코딩)
       const canvas = await decodeToCanvas(file, srcFormat);
 
       // (4) 인코딩 (출력 형식별)
