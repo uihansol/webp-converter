@@ -240,6 +240,24 @@ body {
   white-space: nowrap;
 }
 
+/* 파일 형식 배지 (WEBP / HEIC) */
+.file-badge {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.file-badge.heic {
+  background: #ede7f8;
+  color: #5b3fa8;
+}
+
 .file-size {
   flex-shrink: 0;
   color: var(--ink-soft);

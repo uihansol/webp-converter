@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WEBP 일괄 변환기 — JPG / PNG</title>
+  <title>WEBP · HEIC 일괄 변환기 — JPG / PNG</title>
 
   <!-- 스타일시트 -->
   <link rel="stylesheet" href="style.css" />
@@ -13,6 +13,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <!-- FileSaver : 브라우저에서 파일 저장 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <!-- heic2any : HEIC/HEIF 디코딩 (브라우저는 HEIC를 직접 못 읽으므로 필요) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
 </head>
 <body>
 
@@ -20,10 +22,10 @@
 
     <!-- ============ 헤더 ============ -->
     <header class="app-header">
-      <div class="logo-mark" aria-hidden="true">WEBP→</div>
+      <div class="logo-mark" aria-hidden="true">IMG→</div>
       <div>
-        <h1>WEBP 일괄 변환기</h1>
-        <p class="subtitle">아이폰 WEBP 사진을 JPG 또는 PNG로 변환합니다. 모든 처리는 이 PC에서만 이루어지며, 파일은 어디에도 업로드되지 않습니다.</p>
+        <h1>WEBP · HEIC 일괄 변환기</h1>
+        <p class="subtitle">아이폰 사진(WEBP, HEIC)을 JPG 또는 PNG로 변환합니다. 형식은 자동으로 판별되며, 모든 처리는 이 PC에서만 이루어지고 파일은 어디에도 업로드되지 않습니다.</p>
       </div>
     </header>
 
@@ -33,11 +35,11 @@
 
       <!-- 드래그 앤 드롭 영역 -->
       <div id="dropZone" class="drop-zone" tabindex="0"
-           role="button" aria-label="WEBP 파일을 여기에 드래그하거나 클릭해서 선택">
+           role="button" aria-label="WEBP 또는 HEIC 파일을 여기에 드래그하거나 클릭해서 선택">
         <div class="drop-zone-inner">
           <div class="drop-icon" aria-hidden="true">⤓</div>
-          <p class="drop-main">WEBP 파일을 여기에 끌어다 놓으세요</p>
-          <p class="drop-sub">또는 아래 버튼으로 선택할 수 있어요</p>
+          <p class="drop-main">WEBP / HEIC 파일을 여기에 끌어다 놓으세요</p>
+          <p class="drop-sub">여러 장을 한 번에 올리면 형식을 자동으로 판별해서 변환해요</p>
           <div class="drop-buttons">
             <button type="button" id="btnPickFiles" class="btn btn-secondary">파일 선택</button>
             <button type="button" id="btnPickFolder" class="btn btn-secondary">폴더 선택</button>
@@ -46,7 +48,9 @@
       </div>
 
       <!-- 실제 파일 입력 (화면에는 숨김) -->
-      <input type="file" id="fileInput" accept=".webp,image/webp" multiple hidden />
+      <input type="file" id="fileInput"
+             accept=".webp,.heic,.heif,image/webp,image/heic,image/heif"
+             multiple hidden />
       <input type="file" id="folderInput" webkitdirectory hidden />
 
       <!-- 선택된 파일 목록 -->

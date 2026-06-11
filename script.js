@@ -1,5 +1,6 @@
 /* ============================================================
-   WEBP 일괄 변환기 — script.js
+   WEBP · HEIC 일괄 변환기 — script.js
+   - WEBP와 HEIC(아이폰 사진) 형식을 자동 판별해 JPG/PNG로 변환
    - 모든 변환은 브라우저(사용자 PC) 안에서만 처리됩니다.
    - 원본 파일은 읽기만 하며 절대 수정하지 않습니다.
    ============================================================ */
@@ -10,7 +11,7 @@
    0. 상태(State)
    ------------------------------------------------------------ */
 const state = {
-  files: [],          // 선택된 WEBP File 객체 목록
+  files: [],          // 선택된 WEBP/HEIC File 객체 목록
   converting: false,  // 변환 진행 중 여부
   zipBlob: null,      // 생성된 ZIP Blob
   zipName: "",        // ZIP 파일명
@@ -73,25 +74,50 @@ function baseName(name) {
   return idx > 0 ? name.slice(0, idx) : name;
 }
 
-/** WEBP 파일인지 확인 (확장자 또는 MIME 타입 기준) */
-function isWebpFile(file) {
-  return (
-    file.type === "image/webp" ||
-    file.name.toLowerCase().endsWith(".webp")
-  );
+/**
+ * 파일 형식 자동 판별 (확장자 + MIME 타입 기준)
+ * @returns {"webp" | "heic" | null}  지원하지 않는 형식이면 null
+ */
+function detectFormat(file) {
+  const name = file.name.toLowerCase();
+  if (file.type === "image/webp" || name.endsWith(".webp")) return "webp";
+  if (
+    file.type === "image/heic" ||
+    file.type === "image/heif" ||
+    name.endsWith(".heic") ||
+    name.endsWith(".heif")
+  ) {
+    return "heic";
+  }
+  return null;
 }
 
 /**
- * 파일의 앞부분(매직 바이트)을 읽어 실제 WEBP인지 검증
- * WEBP는 "RIFF....WEBP" 헤더 구조를 가짐 → 손상/위장 파일 사전 차단
+ * 파일 앞부분(매직 바이트)을 읽어 실제 형식인지 검증
+ * - WEBP : "RIFF....WEBP" 헤더
+ * - HEIC : 4번째 바이트부터 "ftyp" + heic 계열 브랜드(heic, heix, mif1 등)
+ * 손상되었거나 확장자만 바꾼 위장 파일을 사전에 차단
  */
-async function verifyWebpSignature(file) {
+async function verifySignature(file, format) {
   try {
-    const buf = await file.slice(0, 12).arrayBuffer();
+    const buf = await file.slice(0, 24).arrayBuffer();
     const bytes = new Uint8Array(buf);
     const ascii = (start, len) =>
       String.fromCharCode(...bytes.slice(start, start + len));
-    return ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP";
+
+    if (format === "webp") {
+      return ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP";
+    }
+
+    if (format === "heic") {
+      if (ascii(4, 4) !== "ftyp") return false;
+      const brand = ascii(8, 4).toLowerCase();
+      // 아이폰 사진에서 쓰이는 HEIC/HEIF 브랜드들
+      return ["heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"]
+        .includes(brand);
+    }
+
+    return false;
   } catch {
     return false; // 읽기 자체에 실패하면 손상으로 간주
   }
@@ -101,13 +127,14 @@ async function verifyWebpSignature(file) {
    3. 파일 선택 / 드래그 앤 드롭 처리
    ------------------------------------------------------------ */
 
-/** 새 파일들을 목록에 추가 (WEBP가 아닌 파일은 경고 후 제외, 중복 제거) */
+/** 새 파일들을 목록에 추가 (WEBP/HEIC가 아닌 파일은 경고 후 제외, 중복 제거) */
 function addFiles(fileLikeList) {
   const incoming = Array.from(fileLikeList);
   const rejected = [];
 
   for (const file of incoming) {
-    if (!isWebpFile(file)) {
+    // 형식 자동 판별 — 지원하지 않는 형식은 제외
+    if (detectFormat(file) === null) {
       rejected.push(file.name);
       continue;
     }
@@ -122,7 +149,7 @@ function addFiles(fileLikeList) {
 
   if (rejected.length > 0) {
     alert(
-      `WEBP가 아닌 파일 ${rejected.length}개는 제외했어요:\n` +
+      `WEBP/HEIC가 아닌 파일 ${rejected.length}개는 제외했어요:\n` +
       rejected.slice(0, 10).join("\n") +
       (rejected.length > 10 ? `\n…외 ${rejected.length - 10}개` : "")
     );
@@ -146,6 +173,12 @@ function renderFileList() {
 
     const li = document.createElement("li");
 
+    // 형식 배지 (WEBP / HEIC)
+    const fmt = detectFormat(file);
+    const badge = document.createElement("span");
+    badge.className = "file-badge" + (fmt === "heic" ? " heic" : "");
+    badge.textContent = fmt ? fmt.toUpperCase() : "?";
+
     const nameSpan = document.createElement("span");
     nameSpan.className = "file-name";
     nameSpan.textContent = file.name;
@@ -165,7 +198,7 @@ function renderFileList() {
       renderFileList();
     });
 
-    li.append(nameSpan, sizeSpan, removeBtn);
+    li.append(badge, nameSpan, sizeSpan, removeBtn);
     fileListEl.appendChild(li);
   });
 
@@ -185,7 +218,7 @@ fileInput.addEventListener("change", (e) => {
 });
 
 folderInput.addEventListener("change", (e) => {
-  // 폴더 선택 시 모든 파일이 들어오므로 addFiles에서 WEBP만 걸러냄
+  // 폴더 선택 시 모든 파일이 들어오므로 addFiles에서 WEBP/HEIC만 걸러냄
   addFiles(e.target.files);
   folderInput.value = "";
 });
@@ -273,13 +306,24 @@ document
    ------------------------------------------------------------ */
 
 /**
- * WEBP 파일을 디코딩해 캔버스에 그림
+ * 이미지 파일을 디코딩해 캔버스에 그림 (형식 자동 분기)
+ * - WEBP : 브라우저 내장 디코더(createImageBitmap) 사용
+ * - HEIC : 브라우저가 직접 못 읽으므로 heic2any로 먼저 PNG Blob으로 변환
+ * @param {File} file
+ * @param {"webp"|"heic"} format
  * @returns {HTMLCanvasElement}
  * @throws 디코딩 실패(손상 파일 등) 시 예외 발생
  */
-async function decodeToCanvas(file) {
-  // createImageBitmap이 빠르고 메모리 효율적 (크롬/엣지 모두 지원)
-  const bitmap = await createImageBitmap(file);
+async function decodeToCanvas(file, format) {
+  let source = file;
+
+  if (format === "heic") {
+    // heic2any는 결과를 Blob 또는 Blob 배열(다중 이미지 HEIC)로 반환
+    const converted = await heic2any({ blob: file, toType: "image/png" });
+    source = Array.isArray(converted) ? converted[0] : converted;
+  }
+
+  const bitmap = await createImageBitmap(source);
 
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
@@ -417,14 +461,22 @@ btnConvert.addEventListener("click", async () => {
     updateProgress(i, state.files.length, file.name);
 
     try {
-      // (1) 매직 바이트 검증 — 손상/위장 파일 사전 차단
-      const valid = await verifyWebpSignature(file);
-      if (!valid) throw new Error("WEBP 형식이 아니거나 손상된 파일");
+      // (1) 형식 자동 판별 (webp | heic)
+      const srcFormat = detectFormat(file);
+      if (!srcFormat) throw new Error("지원하지 않는 형식");
 
-      // (2) 디코딩
-      const canvas = await decodeToCanvas(file);
+      // (2) 매직 바이트 검증 — 손상/위장 파일 사전 차단
+      const valid = await verifySignature(file, srcFormat);
+      if (!valid) {
+        throw new Error(
+          `${srcFormat.toUpperCase()} 형식이 아니거나 손상된 파일`
+        );
+      }
 
-      // (3) 인코딩 (형식별)
+      // (3) 디코딩 (HEIC는 heic2any로 먼저 변환)
+      const canvas = await decodeToCanvas(file, srcFormat);
+
+      // (4) 인코딩 (출력 형식별)
       const result =
         format === "jpg"
           ? await encodeJpgWithLimit(canvas, limitBytes)
@@ -436,7 +488,7 @@ btnConvert.addEventListener("click", async () => {
         );
       }
 
-      // (4) ZIP에 추가 — 동일 파일명 충돌 시 (2), (3)… 붙임
+      // (5) ZIP에 추가 — 동일 파일명 충돌 시 (2), (3)… 붙임
       let outName = `${baseName(file.name)}.${format}`;
       let n = 2;
       while (usedNames.has(outName)) {
