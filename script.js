@@ -305,18 +305,34 @@ document
    5. 이미지 변환 핵심 로직
    ------------------------------------------------------------ */
 
+/* libheif 모듈은 비동기 초기화가 필요 — 한 번만 초기화해서 재사용 */
+let heifModulePromise = null;
+
+/** libheif 모듈을 초기화해서 반환 (이미 초기화됐으면 재사용) */
+function getHeifModule() {
+  if (typeof libheif === "undefined") {
+    return Promise.reject(new Error("libheif 라이브러리를 불러오지 못함"));
+  }
+  if (!heifModulePromise) {
+    // 1.18+ wasm 번들은 libheif가 비동기 팩토리 함수,
+    // 구버전/순수 JS 빌드는 모듈 객체 그대로 노출 → 둘 다 호환 처리
+    heifModulePromise = Promise.resolve(
+      typeof libheif === "function" ? libheif() : libheif
+    );
+  }
+  return heifModulePromise;
+}
+
 /**
  * HEIC 디코딩 ① — libheif-js 사용 (최신 libheif 1.19 내장)
  * 최신 아이폰(iOS 17/18 포함)의 HEIC도 지원
  * @returns {HTMLCanvasElement}
  */
 async function decodeHeicWithLibheif(file) {
-  if (typeof libheif === "undefined") {
-    throw new Error("libheif 라이브러리를 불러오지 못함");
-  }
+  const heif = await getHeifModule(); // wasm 초기화 완료까지 대기
 
   const buf = await file.arrayBuffer();
-  const decoder = new libheif.HeifDecoder();
+  const decoder = new heif.HeifDecoder();
   const images = decoder.decode(buf); // HEIC 내부의 모든 이미지 배열
 
   if (!images || images.length === 0) {
@@ -325,24 +341,32 @@ async function decodeHeicWithLibheif(file) {
 
   // 다중 이미지 HEIC(버스트 등)는 첫 번째 이미지만 사용
   const image = images[0];
-  const width = image.get_width();
-  const height = image.get_height();
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
+  try {
+    const width = image.get_width();
+    const height = image.get_height();
 
-  // libheif가 RGBA 픽셀을 ImageData에 직접 채워 넣음
-  const imageData = ctx.createImageData(width, height);
-  await new Promise((resolve, reject) => {
-    image.display(imageData, (ok) =>
-      ok ? resolve() : reject(new Error("HEIC 픽셀 변환 실패"))
-    );
-  });
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
 
-  ctx.putImageData(imageData, 0, 0);
-  return canvas;
+    // libheif가 RGBA 픽셀을 ImageData에 직접 채워 넣음
+    const imageData = ctx.createImageData(width, height);
+    await new Promise((resolve, reject) => {
+      image.display(imageData, (ok) =>
+        ok ? resolve() : reject(new Error("HEIC 픽셀 변환 실패"))
+      );
+    });
+
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  } finally {
+    // wasm 쪽 메모리 해제 (일괄 변환 시 메모리 누적 방지)
+    images.forEach((img) => {
+      try { img.free(); } catch { /* 무시 */ }
+    });
+  }
 }
 
 /**
